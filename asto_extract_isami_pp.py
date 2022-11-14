@@ -35,7 +35,7 @@ def list_criteria(df_result):
     return criteria_list
 
 
-def format_synthesis_right_area(df_result_row, criteria_list):
+def format_synthesis_right_area(df_result_row, criteria_list_to_keep):
     # Transpose
     df_result = df_result_row.T
 
@@ -52,7 +52,7 @@ def format_synthesis_right_area(df_result_row, criteria_list):
     df_result.insert(0, 'FE', '')
     df_result['FE'] = df_result.iloc[:, [2]].shift(periods=1)
 
-    df_result['FE'] = np.where(df_result.Criteria != "NodeA_ID", '', df_result['FE'])
+    df_result['FE'] = np.where(df_result.Criteria != criteria_list_to_keep[0], '', df_result['FE'])
 
     # Remove lines FE
     df_result = df_result[df_result.Criteria != 'FE']
@@ -61,10 +61,12 @@ def format_synthesis_right_area(df_result_row, criteria_list):
     # Insert column FEM element
     df_result.insert(0, 'FEM element', '')
     df_result['FEM element'] = df_result.iloc[:, [1]]
-    row_numbers = df_result[df_result['Criteria'] == 'NodeA_ID'].index
 
+    # Insert element id's in rows for each criteria
+    row_numbers = df_result[df_result['Criteria'] == criteria_list_to_keep[0]].index
     for i in row_numbers:
-        for j in range(i + 1, i + len(criteria_list)):
+        # for j in range(i + 1, i + len(criteria_list)):
+        for j in range(i + 1, i + len(criteria_list_to_keep)):
             df_result.loc[j, 'FEM element'] = df_result.loc[j - 1, 'FEM element']
 
     # Insert column Component
@@ -73,7 +75,7 @@ def format_synthesis_right_area(df_result_row, criteria_list):
     return df_result
 
 
-def create_synthesis_right_area(df_result, df_LC, criteria_list):
+def create_synthesis_right_area(df_result, df_lc, criteria_list_to_keep):
     # Clean column Fe
     df_result['FE'] = df_result['FE'].str[5:]
 
@@ -83,8 +85,8 @@ def create_synthesis_right_area(df_result, df_LC, criteria_list):
     # Sort by LC
     df_result.sort_values(by=['LC'], inplace=True)
 
-    # Merge df_result and df_LC
-    df_result = pd.merge(df_LC, df_result)
+    # Merge df_result and df_lc
+    df_result = pd.merge(df_lc, df_result)
 
     # Change LC and LC_ID column order
     columns_name = df_result.columns.tolist()
@@ -105,7 +107,7 @@ def create_synthesis_right_area(df_result, df_LC, criteria_list):
     df_result_row = pd.concat(df_result_elm_list, axis=1)
 
     # Format synthesis right area
-    df_result = format_synthesis_right_area(df_result_row, criteria_list)
+    df_result = format_synthesis_right_area(df_result_row, criteria_list_to_keep)
 
     return df_result
 
@@ -122,38 +124,45 @@ def add_synthesis_left_area(df_result, list_clc_id):
     df_result_clc_only_lc_name = df_result_clc_only_lc_name.astype(float)
 
     df_max_value = df_result_clc_only_id.max(axis=1)
-    df_id_max = df_result_clc_only_id.idxmax(axis=1)
-    df_lc_max = df_result_clc_only_lc_name.idxmax(axis=1)
+    df_idmax = df_result_clc_only_id.idxmax(axis=1)
+    df_lcmax = df_result_clc_only_lc_name.idxmax(axis=1)
 
     df_min_value = df_result_clc_only_id.min(axis=1)
-    df_id_min = df_result_clc_only_id.idxmin(axis=1)
-    df_lc_min = df_result_clc_only_lc_name.idxmin(axis=1)
+    df_idmin = df_result_clc_only_id.idxmin(axis=1)
+    df_lcmin = df_result_clc_only_lc_name.idxmin(axis=1)
 
     # Insert column Max, Max_LC_Name, Max_LC_ID
     df_result.insert(2, 'Max', df_max_value)
-    df_result.insert(3, 'Max_LC_Name', df_lc_max)
-    df_result.insert(4, 'Max_LC_ID', df_id_max)
+    df_result.insert(3, 'Max_LC_Name', df_lcmax)
+    df_result.insert(4, 'Max_LC_ID', df_idmax)
     df_result.insert(5, 'Min', df_min_value)
-    df_result.insert(6, 'Min_LC_Name', df_lc_min)
-    df_result.insert(7, 'Min_LC_ID', df_id_min)
+    df_result.insert(6, 'Min_LC_Name', df_lcmin)
+    df_result.insert(7, 'Min_LC_ID', df_idmin)
     return df_result
 
 
-def create_synthesis(csv_result_file, nb_ULC, list_clc_id, df_LC, list_LC):
+def create_synthesis(csv_result_file, nb_ulc, list_clc_id, df_lc, list_lc, criteria_list_to_keep):
     df_result = pd.read_csv(csv_result_file, usecols=lambda x: x != 'TableValues', sep=';', skiprows=range(0, 11))
 
     # List criteria
     criteria_list = list_criteria(df_result)
+    print(f"extracted_criteria_list {criteria_list}")
+    print(f"criteria_list_to_keep {criteria_list_to_keep}")
+    criteria_list_to_del = [x for x in criteria_list if x not in criteria_list_to_keep]
+    print(f"criteria_list_to_del {criteria_list_to_del}")
+
+    for criteria in criteria_list_to_del:
+        df_result.drop(criteria, axis=1, inplace=True)
 
     # Create right area of synthesis with LC in columns and criteria in rows for each element
-    df_result = create_synthesis_right_area(df_result, df_LC, criteria_list)
+    df_result = create_synthesis_right_area(df_result, df_lc, criteria_list_to_keep)
 
     # Add left area of synthesis with max and min values
     df_result = add_synthesis_left_area(df_result, list_clc_id)
 
     # Formatting
     # Formatting 2 first rows
-    data_top_lc = df_result.columns.values.tolist()[:10] + list_LC
+    data_top_lc = df_result.columns.values.tolist()[:10] + list_lc
     data_top_lc_id = df_result.columns.values.tolist()
     for i in range(10):
         data_top_lc_id[i] = ""
@@ -165,7 +174,7 @@ def create_synthesis(csv_result_file, nb_ULC, list_clc_id, df_LC, list_LC):
     df_result.insert(loc=0, column='empty0', value=['' for i in range(df_result.shape[0])])
     df_result.insert(loc=9, column='empty9', value=['' for i in range(df_result.shape[0])])
     df_result.insert(loc=10, column='empty10', value=['' for i in range(df_result.shape[0])])
-    df_result.insert(loc=11 + 2 + nb_ULC, column='emptyCLC', value=['' for i in range(df_result.shape[0])])
+    df_result.insert(loc=11 + 2 + nb_ulc, column='emptyCLC', value=['' for i in range(df_result.shape[0])])
 
     # Write xlsx file
     synthesis_file = f"{csv_result_file[:len(csv_result_file) - 4]}_synthesis.xlsx"
@@ -175,19 +184,18 @@ def create_synthesis(csv_result_file, nb_ULC, list_clc_id, df_LC, list_LC):
     return df_result, criteria_list, synthesis_file
 
 
-def create_transpose(df_result, nb_ULC, csv_result_file):
+def create_transpose(df_result, nb_ulc, csv_result_file):
     # Create dataframe for transpose
     df_result_clc = df_result.copy()
 
     # Remove left columns and ULC
     df_result_clc = df_result_clc.drop(df_result_clc.iloc[:, :11], axis=1)
-    df_result_clc.drop(df_result_clc.iloc[:, 2:nb_ULC + 3], axis=1, inplace=True)
+    df_result_clc.drop(df_result_clc.iloc[:, 2:nb_ulc + 3], axis=1, inplace=True)
 
     # Transpose
     df_result_clc = df_result_clc.T
 
     # Fill first column with blanks
-    # df_result_clc.drop(columns=df_result_clc.columns[0], axis=1, inplace=True)
     df_result_clc[0] = ''
 
     # Write xlsx file
@@ -220,8 +228,8 @@ def prepend_file(file, first_lines):
         f.write(first_lines + '\n' + content)
 
 
-def create_hwascii(criteria, df_result, criteria_list, csv_result_file, hwascii_file_list):
-    # Create dataframe for HWascii
+def create_hwascii(criteria, df_result, csv_result_file, hwascii_file_list):
+    # Create dataframe for hwascii
     df_result_hwascii = df_result.copy()
 
     # Create df_result_hwascii_crit
@@ -229,10 +237,10 @@ def create_hwascii(criteria, df_result, criteria_list, csv_result_file, hwascii_
     df_result_hwascii_crit = df_result_hwascii_crit.query(f"Criteria == '{criteria}'")
 
     # Create a dataframe with LC name row
-    df_result_hwascii_LC = df_result_hwascii.iloc[1:2]
+    df_result_hwascii_lc = df_result_hwascii.iloc[1:2]
 
-    # Concat dataframes df_result_hwascii_crit and df_result_hwascii_LC
-    df_result_hwascii_crit = pd.concat([df_result_hwascii_LC, df_result_hwascii_crit], join='inner')
+    # Concat dataframes df_result_hwascii_crit and df_result_hwascii_lc
+    df_result_hwascii_crit = pd.concat([df_result_hwascii_lc, df_result_hwascii_crit], join='inner')
 
     # Remove the unwanted columns
     df_result_hwascii_crit.drop(['empty0', 'Component', 'empty9', 'empty10', 'FE', 'Criteria', 'emptyCLC'], axis=1,
@@ -264,7 +272,8 @@ def create_directory(folder):
     try:
         Path(Path(Path(), f'{folder}')).mkdir(parents=False, exist_ok=False)
         print(f"{folder} directory has been created...")
-    except Exception:
+
+    except FileExistsError:
         print(f"Directory {folder} already exists")
         pass
 
@@ -281,16 +290,20 @@ def postprocess():
     # Get load cases
     nb_ulc, list_clc_id, df_lc, list_lc = get_lc(lc_file)
 
+    # Define criteria_list_to_keep
+    criteria_list_to_keep = ['N', 'Stress']
+
     # Create synthesis
-    df_result, criteria_list, synthesis_file = create_synthesis(csv_result_file, nb_ulc, list_clc_id, df_lc, list_lc)
+    df_result, criteria_list, synthesis_file = create_synthesis(csv_result_file, nb_ulc, list_clc_id, df_lc, list_lc,
+                                                                criteria_list_to_keep)
 
     # Create transpose
     transpose_file = create_transpose(df_result, nb_ulc, csv_result_file)
 
     # Create HWascii files
     hwascii_file_list = []
-    for criteria in criteria_list:
-        hwascii_file_list = create_hwascii(criteria, df_result, criteria_list, csv_result_file, hwascii_file_list)
+    for criteria in criteria_list_to_keep:
+        hwascii_file_list = create_hwascii(criteria, df_result, csv_result_file, hwascii_file_list)
 
     # Create folders
     for folder in ['SYNTHESES', 'TRANSPOSES', 'HWASCIIS']:
